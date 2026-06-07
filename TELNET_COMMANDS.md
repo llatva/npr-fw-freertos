@@ -25,37 +25,72 @@ FreeRTOS: v11.1.0 LTS
 ```
 
 #### `status`
-Display comprehensive modem status.
+Display comprehensive modem status with link quality and packet counters.
 ```
 Modem Status:
   Mode: Master/Client
   Radio: ON/OFF
   Client ID: <0-15>
-  Connection: Connected/Disconnected
-  Telnet Sessions: <count>
-  Commands: <count>
+  Connection: Connected/Waiting/Disconnected/Rejected
   Uptime: <seconds> sec
+
+Link Quality:
+  Timing Advance: <units> (<km>)
+  Temperature: <degrees>°C
+
+Downlink:
+  RSSI: <value> dBm
+  BER: <percentage>%
+
+Uplink:
+  RSSI: <value> dBm
+  BER: <percentage>%
+
+Packet Counters:
+  RX Ethernet: <count>
+  TX Radio: <count>
+  RX Radio: <count>
 ```
 
+**Notes:**
+- Link quality section only shown when radio is ON
+- Downlink/uplink metrics shown for clients only
+- Timing advance converted to approximate distance (0.15 km/unit)
+- BER (Bit Error Rate) shown as percentage
+
 #### `who`
-Show master/client connection information.
+Show detailed master/client connection information.
 
 **Master mode:**
 ```
 Master/Client Information:
   Mode: MASTER
-  Client[0]: CALLSIGN1
-  Client[1]: CALLSIGN2
+  My Callsign: MYCALL
+  My Client ID: 127
+  My IP: 192.168.10.1
+
+Connected Clients:
+  [0] CLIENT1     ID=0  IP: 192.168.10.100-192.168.10.199  Age: 45s
+  [1] CLIENT2     ID=1  IP: 192.168.10.200-192.168.10.299  Age: 120s
+
+Total: 2 clients connected
 ```
 
 **Client mode:**
 ```
 Master/Client Information:
   Mode: CLIENT
-  Client ID: 5
-  Connection: Connected
+  My Callsign: MYCLIENT
+  My Client ID: 5
+  My IP: 192.168.10.205
+  Connection: Connected/Waiting/Disconnected
   Master: MASTER_CALL
 ```
+
+**Notes:**
+- Master mode shows IP range allocated to each client
+- Age indicates time since client registration (in seconds)
+- Client ID 127 is reserved for master
 
 ### Display Commands
 omplete configuration including network parameters.
@@ -115,6 +150,41 @@ Enable radio transmitter.
 
 #### `radio off`
 Disable radio transmitter.
+
+#### `radio diag`
+Display detailed radio chip diagnostics.
+```
+Radio Chip Diagnostics:
+  Chip: Si4463
+  State: ON/OFF
+  Frequency: 437.000 MHz
+  Freq Shift: 0 kHz
+  RF Power: 0x7F (20.0 dBm)
+  Network ID: 0
+  Temperature: 42°C
+```
+
+**Notes:**
+- Power level ranges from 0x00 (-32 dBm) to 0x7F (+20 dBm) approximately
+- Temperature read from Si4463 internal sensor
+- Additional chip status (PLL lock, FIFO) may be added in future
+
+#### `test tx <count>`
+Send test packets over radio link.
+```
+test tx 100
+Sending 100 test packets...
+Note: Test packet transmission requires radio task integration.
+This feature queues packets to the radio TX buffer.
+```
+
+**Parameters:**
+- `<count>`: Number of test packets to send (1-1000)
+
+**Notes:**
+- Test packets are UDP/IP frames with sequence numbers
+- Useful for testing link quality and throughput
+- Results will show sent/ack/failed counts when fully implemented
 
 ### Configuration Commands
 

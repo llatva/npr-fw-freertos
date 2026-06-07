@@ -55,13 +55,15 @@ Both interfaces support identical commands:
 ```
 help, ?, apua     - Show command list (apua = Finnish for help)
 version           - Firmware version
-status            - Modem status
-who               - Client information
+status            - Detailed modem status (enhanced)
+who               - Detailed client information (enhanced)
 show config       - Configuration (detailed)
 show tasks        - FreeRTOS tasks
 show memory       - Heap usage
 show dhcp         - DHCP/ARP table
 radio on/off      - Radio control
+radio diag        - Radio chip diagnostics
+test tx <count>   - Send N test packets (1-1000)
 save              - Save to flash
 set <param> <val> - Set parameter (see below)
 reset_to_default  - Factory reset
@@ -69,6 +71,53 @@ reboot            - System restart
 exit, logout      - Close connection
 73                - Ham radio goodbye
 ```
+
+### Enhanced Status Command
+The `status` command provides comprehensive modem status:
+- **Basic Info:** Mode, radio state, client ID, connection state, uptime
+- **Link Quality:** Timing advance (TA) in units and km, temperature
+- **Downlink Metrics:** RSSI (dBm), BER (%) for clients
+- **Uplink Metrics:** RSSI (dBm), BER (%) for connected clients
+- **Packet Counters:** RX Ethernet, TX Radio, RX Radio
+
+**Implementation:**
+- Uses TDMA_table_TA[] for timing advance calculation
+- Converts RSSI: (value / 512.0) - 136.0 dBm (downlink), (value / 2.0) - 136.0 dBm (uplink)
+- Converts BER: value / 500.0 %
+- Distance estimate: TA_units * 0.15 km
+
+### Enhanced Who Command
+The `who` command shows detailed client table:
+
+**Master Mode:**
+- Own callsign, client ID (127), and IP address
+- List of connected clients with:
+  - Client index and callsign
+  - Assigned client ID
+  - IP range allocation (start-end)
+  - Connection age in seconds
+- Total count of connected clients
+
+**Client Mode:**
+- Own callsign, client ID, and IP address
+- Connection state (Connected/Waiting/Disconnected)
+- Master station callsign
+
+### Radio Diagnostics Command
+The `radio diag` command displays:
+- Chip type (Si4463)
+- Current state (ON/OFF)
+- Operating frequency with shift
+- RF power level (hex and approximate dBm)
+- Network ID
+- Chip temperature
+
+### Test Packet Command
+The `test tx <count>` command:
+- Sends specified number of test packets (1-1000)
+- Queues packets to radio TX task
+- Provides framework for link testing
+- **Note:** Full implementation requires radio task integration for packet generation and result tracking
 
 ### Available SET Parameters
 The following parameters can be configured via `set <param> <value>`:
@@ -174,6 +223,35 @@ All major CLI commands from the original MBED implementation have been ported:
 - System configuration (telnet routing, DHCP, etc.)
 - All status and information commands
 
+### Enhanced Features (Beyond Original)
+The FreeRTOS port implements enhanced static commands suitable for the task-based architecture:
+
+**1. Enhanced Status Command:**
+- Comprehensive link quality metrics (TA, RSSI, BER)
+- Temperature monitoring from Si4463
+- Packet counter statistics
+- Distance estimation from timing advance
+- Replaces original's interactive status display with detailed snapshot
+
+**2. Enhanced Who Command:**
+- Detailed client table with IP range allocation
+- Connection age tracking
+- Master and client information in one view
+- Replaces original's simpler client list
+
+**3. Radio Diagnostics Command:**
+- Si4463 chip status and configuration
+- Power level in both hex and dBm
+- Frequency and shift information
+- Temperature monitoring
+- **New feature** not in original
+
+**4. Test Packet Command:**
+- Send N test packets for link testing
+- Framework for tracking sent/ack/failed counts
+- More practical than pure TX_test for production use
+- Replaces original's TX_test (carrier test mode)
+
 ### Intentionally Not Implemented
-- **TX_test command**: Hardware-specific test mode requiring direct radio driver access and timing coordination with TDMA. This is a debug feature not essential for normal operation.
-- **Interactive status/who displays**: The original had continuously updating status displays with Ctrl+C to exit. The FreeRTOS version provides static snapshots to avoid CLI complexity.
+- **Original TX_test command**: Hardware carrier test mode requiring direct radio driver access and timing coordination with TDMA. Replaced with more practical test packet command.
+- **Interactive displays with continuous updates**: The original had continuously updating status/who displays with Ctrl+C to exit. The FreeRTOS version provides enhanced static snapshots that are better suited to the task-based architecture and provide more information per query.

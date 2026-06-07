@@ -94,6 +94,8 @@ uint8_t TX_TDMA_intern_data[400] PLACE_IN_SRAM2;    /* TDMA allocation frame buf
 volatile uint32_t RSSI_total_stat = 0;
 volatile uint32_t RSSI_stat_pkt_nb = 0;
 volatile uint32_t RX_Eth_IPv4_counter = 0;
+volatile uint32_t TX_radio_IPv4_counter = 0;
+volatile uint32_t RX_radio_IPv4_counter = 0;
 volatile uint8_t connect_rejection_reason = 0;
 
 /* Temperature monitoring */
@@ -208,6 +210,8 @@ void InitializeGlobalVariables(void)
     RSSI_total_stat = 0;
     RSSI_stat_pkt_nb = 0;
     RX_Eth_IPv4_counter = 0;
+    TX_radio_IPv4_counter = 0;
+    RX_radio_IPv4_counter = 0;
     
     /* Reset state variables */
     is_TDMA_master = 0;

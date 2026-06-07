@@ -197,6 +197,8 @@ extern uint8_t TX_TDMA_intern_data[400];             /* TDMA allocation frame bu
 extern volatile uint32_t RSSI_total_stat;
 extern volatile uint32_t RSSI_stat_pkt_nb;
 extern volatile uint32_t RX_Eth_IPv4_counter;
+extern volatile uint32_t TX_radio_IPv4_counter;     /* Packets transmitted to radio */
+extern volatile uint32_t RX_radio_IPv4_counter;     /* Packets received from radio */
 extern volatile uint8_t connect_rejection_reason;
 
 /* Temperature monitoring */

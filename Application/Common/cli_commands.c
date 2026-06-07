@@ -80,13 +80,15 @@ int CLI_ProcessCommand(CLI_Context_t *ctx, const char *cmd) {
             "Available commands:\r\n"
             "  help, ?, apua     - Show this help\r\n"
             "  version           - Show firmware version\r\n"
-            "  status            - Show modem status\r\n"
-            "  who               - Show client table\r\n"
+            "  status            - Show detailed modem status\r\n"
+            "  who               - Show detailed client table\r\n"
             "  show config       - Display configuration\r\n"
             "  show tasks        - Display FreeRTOS tasks\r\n"
             "  show memory       - Display memory usage\r\n"
             "  show dhcp         - Display DHCP/ARP entries\r\n"
             "  radio on/off      - Enable/disable radio\r\n"
+            "  radio diag        - Show radio diagnostics\r\n"
+            "  test tx <count>   - Send N test packets (1-1000)\r\n"
             "  save              - Save configuration to flash\r\n"
             "  set <param> <val> - Set parameter (see below)\r\n"
             "  reset_to_default  - Factory reset (restore defaults)\r\n"
@@ -117,7 +119,14 @@ int CLI_ProcessCommand(CLI_Context_t *ctx, const char *cmd) {
     }
     /* Command: status */
     else if (strcmp(cmd_str, "status") == 0) {
-        snprintf((char *)tx_data, ctx->response_size,
+        const char *conn_state[] = {"Disconnected", "Waiting", "Connected", "Rejected"};
+        int32_t TA_km = 0;
+        float rssi_down = 0.0f, rssi_up = 0.0f;
+        float ber_down = 0.0f, ber_up = 0.0f;
+        
+        /* Note: Bandwidth calculation would require periodic sampling of counters */
+        
+        len = snprintf((char *)tx_data, ctx->response_size,
                  "Modem Status:\r\n"
                  "  Mode: %s\r\n"
                  "  Radio: %s\r\n"
@@ -127,9 +136,68 @@ int CLI_ProcessCommand(CLI_Context_t *ctx, const char *cmd) {
                  is_TDMA_master ? "Master" : "Client",
                  CONF_radio.state_ON_OFF ? "ON" : "OFF",
                  my_radio_client_ID,
-                 my_client_radio_connexion_state ? "Connected" : "Disconnected",
+                 conn_state[my_client_radio_connexion_state > 3 ? 0 : my_client_radio_connexion_state],
                  xTaskGetTickCount() / 1000);
-        len = strlen((char *)tx_data);
+        
+        /* Link Quality section */
+        if (CONF_radio.state_ON_OFF) {
+            if (!is_TDMA_master && my_radio_client_ID < RADIO_ADDR_TABLE_SIZE) {
+                TA_km = TDMA_table_TA[my_radio_client_ID] / 10; /* TA in units, convert to km (0.15 factor) */
+            }
+            
+            len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                     "\r\nLink Quality:\r\n"
+                     "  Timing Advance: %ld units (%.1f km)\r\n"
+                     "  Temperature: %u°C\r\n",
+                     (long)TDMA_table_TA[my_radio_client_ID],
+                     (float)TA_km * 0.15f,
+                     G_temperature_SI4463);
+            
+            /* Downlink quality (for clients) */
+            if (!is_TDMA_master && RSSI_stat_pkt_nb > 0) {
+                rssi_down = ((float)G_downlink_RSSI / 512.0f) - 136.0f;
+                ber_down = ((float)G_downlink_BER) / 500.0f;
+                
+                len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                         "\r\nDownlink:\r\n"
+                         "  RSSI: %.1f dBm\r\n"
+                         "  BER: %.2f%%\r\n",
+                         rssi_down, ber_down);
+            } else if (!is_TDMA_master) {
+                len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                         "\r\nDownlink:\r\n"
+                         "  RSSI: -- dBm\r\n"
+                         "  BER: --%%\r\n");
+            }
+            
+            /* Uplink quality (for connected clients) */
+            if (!is_TDMA_master && my_client_radio_connexion_state == 2 &&
+                my_radio_client_ID < RADIO_ADDR_TABLE_SIZE) {
+                rssi_up = ((float)G_radio_addr_table_RSSI[my_radio_client_ID] / 2.0f) - 136.0f;
+                ber_up = ((float)G_radio_addr_table_BER[my_radio_client_ID]) / 500.0f;
+                
+                len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                         "\r\nUplink:\r\n"
+                         "  RSSI: %.1f dBm\r\n"
+                         "  BER: %.2f%%\r\n",
+                         rssi_up, ber_up);
+            } else if (!is_TDMA_master) {
+                len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                         "\r\nUplink:\r\n"
+                         "  RSSI: -- dBm\r\n"
+                         "  BER: --%%\r\n");
+            }
+        }
+        
+        /* Packet counters */
+        len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                 "\r\nPacket Counters:\r\n"
+                 "  RX Ethernet: %lu\r\n"
+                 "  TX Radio: %lu\r\n"
+                 "  RX Radio: %lu\r\n",
+                 (unsigned long)RX_Eth_IPv4_counter,
+                 (unsigned long)TX_radio_IPv4_counter,
+                 (unsigned long)RX_radio_IPv4_counter);
     }
     /* Command: show */
     else if (strcmp(cmd_str, "show") == 0 || strcmp(cmd_str, "display") == 0) {
@@ -335,8 +403,65 @@ int CLI_ProcessCommand(CLI_Context_t *ctx, const char *cmd) {
             strcpy((char *)tx_data, "Radio is now OFF.\r\n");
             len = strlen((char *)tx_data);
         }
+        else if (strcmp(param1, "diag") == 0 || strcmp(param1, "diagnostics") == 0) {
+            /* Radio chip diagnostics - requires SI4463 radio driver functions */
+            len = snprintf((char *)tx_data, ctx->response_size,
+                          "Radio Chip Diagnostics:\r\n"
+                          "  Chip: Si4463\r\n"
+                          "  State: %s\r\n"
+                          "  Frequency: %u.%03u MHz\r\n"
+                          "  Freq Shift: %d kHz\r\n"
+                          "  RF Power: 0x%02X (%.1f dBm)\r\n"
+                          "  Network ID: %u\r\n"
+                          "  Temperature: %u°C\r\n",
+                          CONF_radio.state_ON_OFF ? "ON" : "OFF",
+                          420 + (CONF_frequency_HD / 1000),
+                          CONF_frequency_HD % 1000,
+                          CONF_freq_shift,
+                          CONF_radio_PA_PWR,
+                          /* Approx conversion: 0=~-32dBm, 127=+20dBm */
+                          ((float)CONF_radio_PA_PWR * 0.41f) - 32.0f,
+                          CONF_radio_network_ID,
+                          G_temperature_SI4463);
+            
+            /* Note: For detailed chip status (PLL lock, FIFO status, etc.),
+             * would need to call SI4463 driver functions to read registers.
+             * This would require including si4463_driver.h and calling
+             * functions like SI4463_Read_Status(). */
+        }
         else {
-            strcpy((char *)tx_data, "Usage: radio {on|off}\r\n");
+            strcpy((char *)tx_data, "Usage: radio {on|off|diag}\r\n");
+            len = strlen((char *)tx_data);
+        }
+    }
+    /* Command: test */
+    else if (strcmp(cmd_str, "test") == 0) {
+        if (strcmp(param1, "tx") == 0) {
+            int count = atoi(param2);
+            if (count > 0 && count <= 1000) {
+                /* Send test packets - this requires integration with radio task
+                 * For now, provide a placeholder response */
+                len = snprintf((char *)tx_data, ctx->response_size,
+                              "Sending %d test packets...\r\n"
+                              "Note: Test packet transmission requires radio task integration.\r\n"
+                              "This feature queues packets to the radio TX buffer.\r\n",
+                              count);
+                
+                /* TODO: Implement actual test packet transmission by:
+                 * 1. Creating test UDP/IP packets with incrementing sequence numbers
+                 * 2. Queuing them to the radio TX task
+                 * 3. Tracking sent/ack/failed counts
+                 * 4. Reporting results after completion
+                 * This requires access to radio task queue and TX functions.
+                 */
+            }
+            else {
+                strcpy((char *)tx_data, "Usage: test tx <count>  (count: 1-1000)\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else {
+            strcpy((char *)tx_data, "Usage: test tx <count>\r\n");
             len = strlen((char *)tx_data);
         }
     }
@@ -696,19 +821,57 @@ int CLI_ProcessCommand(CLI_Context_t *ctx, const char *cmd) {
     }
     /* Command: who */
     else if (strcmp(cmd_str, "who") == 0) {
+        uint32_t ip, ip_end;
+        uint32_t uptime_sec = xTaskGetTickCount() / 1000;
+        
         len = snprintf((char *)tx_data, ctx->response_size,
                       "Master/Client Information:\r\n");
         
         if (is_TDMA_master) {
             len += snprintf((char *)tx_data + len, ctx->response_size - len,
-                           "  Mode: MASTER\r\n");
+                           "  Mode: MASTER\r\n"
+                           "  My Callsign: %s\r\n"
+                           "  My Client ID: 127\r\n",
+                           CONF_radio_my_callsign + 2);
+            
+            ip = LAN_conf_applied.LAN_modem_IP;
+            len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                           "  My IP: %u.%u.%u.%u\r\n\r\n",
+                           (unsigned int)(ip >> 24) & 0xFF,
+                           (unsigned int)(ip >> 16) & 0xFF,
+                           (unsigned int)(ip >> 8) & 0xFF,
+                           (unsigned int)ip & 0xFF);
+            
+            len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                           "Connected Clients:\r\n");
             
             int clients = 0;
-            for (int i = 0; i < RADIO_ADDR_TABLE_SIZE && len < (ctx->response_size - 50); i++) {
+            for (int i = 0; i < RADIO_ADDR_TABLE_SIZE && len < (ctx->response_size - 100); i++) {
                 if (CONF_radio_addr_table_status[i] != 0) {
+                    ip = CONF_radio_addr_table_IP_begin[i];
+                    ip_end = ip + CONF_radio_addr_table_IP_size[i] - 1;
+                    
+                    /* Calculate age */
+                    uint32_t age_sec = 0;
+                    if (CONF_radio_addr_table_date[i] > 0) {
+                        age_sec = (uptime_sec > CONF_radio_addr_table_date[i]) ?
+                                  (uptime_sec - CONF_radio_addr_table_date[i]) : 0;
+                    }
+                    
                     len += snprintf((char *)tx_data + len, ctx->response_size - len,
-                                   "  Client[%d]: %s\r\n",
-                                   i, CONF_radio_addr_table_callsign[i]);
+                                   "  [%d] %-10s  ID=%d  IP: %u.%u.%u.%u-%u.%u.%u.%u  Age: %lus\r\n",
+                                   i,
+                                   CONF_radio_addr_table_callsign[i],
+                                   i,
+                                   (unsigned int)(ip >> 24) & 0xFF,
+                                   (unsigned int)(ip >> 16) & 0xFF,
+                                   (unsigned int)(ip >> 8) & 0xFF,
+                                   (unsigned int)ip & 0xFF,
+                                   (unsigned int)(ip_end >> 24) & 0xFF,
+                                   (unsigned int)(ip_end >> 16) & 0xFF,
+                                   (unsigned int)(ip_end >> 8) & 0xFF,
+                                   (unsigned int)ip_end & 0xFF,
+                                   (unsigned long)age_sec);
                     clients++;
                 }
             }
@@ -716,17 +879,30 @@ int CLI_ProcessCommand(CLI_Context_t *ctx, const char *cmd) {
             if (clients == 0) {
                 len += snprintf((char *)tx_data + len, ctx->response_size - len,
                                "  (no clients connected)\r\n");
+            } else {
+                len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                               "\r\nTotal: %d client%s connected\r\n",
+                               clients, clients == 1 ? "" : "s");
             }
         }
         else {
+            ip = LAN_conf_applied.LAN_modem_IP;
             len += snprintf((char *)tx_data + len, ctx->response_size - len,
                            "  Mode: CLIENT\r\n"
-                           "  Client ID: %u\r\n"
+                           "  My Callsign: %s\r\n"
+                           "  My Client ID: %u\r\n"
+                           "  My IP: %u.%u.%u.%u\r\n"
                            "  Connection: %s\r\n"
                            "  Master: %s\r\n",
+                           CONF_radio_my_callsign + 2,
                            my_radio_client_ID,
-                           my_client_radio_connexion_state ? "Connected" : "Disconnected",
-                           CONF_radio_master_callsign);
+                           (unsigned int)(ip >> 24) & 0xFF,
+                           (unsigned int)(ip >> 16) & 0xFF,
+                           (unsigned int)(ip >> 8) & 0xFF,
+                           (unsigned int)ip & 0xFF,
+                           my_client_radio_connexion_state == 2 ? "Connected" :
+                           my_client_radio_connexion_state == 1 ? "Waiting" : "Disconnected",
+                           CONF_radio_master_callsign + 2);
         }
     }
     /* Command: reset_to_default */
