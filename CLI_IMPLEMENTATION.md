@@ -53,22 +53,53 @@ Features:
 Both interfaces support identical commands:
 
 ```
-help, ?           - Show command list
+help, ?, apua     - Show command list (apua = Finnish for help)
 version           - Firmware version
 status            - Modem status
 who               - Client information
-show config       - Configuration
+show config       - Configuration (detailed)
 show tasks        - FreeRTOS tasks
 show memory       - Heap usage
 show dhcp         - DHCP/ARP table
 radio on/off      - Radio control
 save              - Save to flash
-set <param> <val> - Set parameter
+set <param> <val> - Set parameter (see below)
 reset_to_default  - Factory reset
 reboot            - System restart
 exit, logout      - Close connection
 73                - Ham radio goodbye
 ```
+
+### Available SET Parameters
+The following parameters can be configured via `set <param> <value>`:
+
+**Radio Configuration:**
+- `callsign` - Station callsign (up to 13 chars)
+- `is_master` - Master/client mode (yes/no)
+- `network_id`, `radio_netw_ID` - Network ID (0-15)
+- `frequency` - Operating frequency in MHz (420.000-450.000)
+- `freq_shift` - Frequency shift in MHz (-10.0 to +10.0)
+- `modulation` - Modulation scheme (11-14 or 20-24)
+- `RF_power` - RF transmit power (0-127, default 127)
+- `radio_on_at_start` - Auto-start radio at boot (yes/no)
+- `master_FDD` - Master FDD mode (no/down/up)
+
+**Network Configuration:**
+- `modem_IP` - Modem IP address
+- `netmask` - Network subnet mask
+- `IP_begin` - Starting IP for allocation
+- `master_IP_size` - IP pool size (master)
+- `client_req_size` - Requested IP size (client)
+- `master_down_IP` - FDD master down IP
+
+**Service Configuration:**
+- `telnet_active` - Enable telnet service (yes/no)
+- `telnet_routed` - Enable telnet routing (yes/no)
+- `DHCP_active` - Enable DHCP server (yes/no)
+- `DNS_active` - Enable DNS service (yes/no)
+- `DNS_value` - DNS server IP address
+- `def_route_active` - Enable default route (yes/no)
+- `def_route_val` - Default gateway IP address
 
 ## Code Savings
 - **Eliminated duplication:** ~485 lines of command processing
@@ -131,3 +162,18 @@ This allows each interface to handle these special cases appropriately.
 - Command aliases
 - Multi-line input for complex commands
 - Color support for status displays
+
+## Notes on Differences from Original
+
+### Implemented from Original
+All major CLI commands from the original MBED implementation have been ported:
+- Complete `set` parameter support (25+ parameters)
+- Detailed `show config` output matching original format
+- Network configuration commands (IP, netmask, DNS, gateway, etc.)
+- Radio configuration (frequency, power, modulation, FDD modes)
+- System configuration (telnet routing, DHCP, etc.)
+- All status and information commands
+
+### Intentionally Not Implemented
+- **TX_test command**: Hardware-specific test mode requiring direct radio driver access and timing coordination with TDMA. This is a debug feature not essential for normal operation.
+- **Interactive status/who displays**: The original had continuously updating status displays with Ctrl+C to exit. The FreeRTOS version provides static snapshots to avoid CLI complexity.

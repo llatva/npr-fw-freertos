@@ -76,6 +76,12 @@ typedef struct __attribute__((packed)) {
     uint16_t radio_long_preamble_duration_for_TA;
     uint8_t radio_network_ID;
     uint16_t frequency_HD;              /* Frequency offset in 100Hz units */
+    int16_t freq_shift;                 /* Frequency shift in kHz */
+    uint8_t radio_PA_PWR;               /* RF power (0-127) */
+    uint32_t master_down_IP;            /* Master FDD down IP address */
+    
+    /* System Configuration */
+    uint8_t telnet_routed;              /* Telnet routing flag */
     
     /* Radio Callsigns */
     char radio_my_callsign[16];

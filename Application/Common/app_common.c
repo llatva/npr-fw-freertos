@@ -57,6 +57,7 @@ volatile uint16_t radio_addr_table_BER[RADIO_ADDR_TABLE_SIZE] = {0};
 volatile uint8_t is_TDMA_master = 0;
 volatile uint8_t is_SRAM_ext = 0;
 volatile uint8_t is_telnet_active = 0;
+volatile uint8_t is_telnet_routed = 0;          /* Telnet traffic routing */
 volatile uint8_t my_client_radio_connexion_state = 0;
 uint8_t my_radio_client_ID = 0;  /* Default client ID */
 
@@ -104,6 +105,9 @@ int CONF_signaling_period = 3;              /* Default 3 seconds */
 uint32_t CONF_radio_timeout_small = 1000000; /* 1 second in microseconds */
 uint8_t CONF_radio_network_ID = 0;          /* Default network ID 0 */
 uint16_t CONF_frequency_HD = 17000;         /* Default 437.000 MHz (17MHz offset from 420MHz) */
+int16_t CONF_freq_shift = 0;                /* Frequency shift in kHz (default 0) */
+uint8_t CONF_radio_PA_PWR = 0x7F;           /* RF power (default 127 = max) */
+uint32_t CONF_master_down_IP = 0;           /* Master FDD down IP address */
 uint8_t CONF_modem_MAC[6] = {0x4E, 0x46, 0x50, 0x52, 0x00, 0x01}; /* NFPR:00:01 */
 
 /* Downlink signal quality */

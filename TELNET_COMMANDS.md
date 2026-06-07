@@ -10,8 +10,10 @@
 
 ### Information Commands
 
-#### `help` or `?`
+#### `help` or `?` or `apua`
 Display complete command reference.
+
+**Note:** `apua` is Finnish for "help"
 
 #### `version`
 Show firmware version information.
@@ -56,14 +58,24 @@ Master/Client Information:
 ```
 
 ### Display Commands
-
-#### `show config` or `display config`
-Display current configuration.
+omplete configuration including network parameters.
 ```
-Configuration:
-  Network ID: 0
-  Frequency: 437.000 MHz
-  Mode: Master/Client
+Current CONFIG:
+  callsign: MYCALL
+  is_master: no
+  MAC: 4E:46:50:52:00:01
+  ext_SRAM: yes
+  frequency: 437.000 MHz
+  freq_shift: 0.000 MHz
+  RF_power: 127
+  modulation: 20
+  radio_netw_ID: 0
+  radio_on_at_start: no
+  telnet_active: no
+  telnet_routed: no
+  modem_IP: 192.168.10.1
+  netmask: 255.255.255.0
+  [additional parameters based on master/client mode]
   Modulation: 22
   Radio State: ON/OFF
 ```
@@ -181,11 +193,28 @@ Ham radio goodbye (Easter egg).
 ## Command Parameters
 
 ### Available `set` parameters:
+- `callsign` - Station callsign (up to 13 chars)
+- `is_master` - Master mode (yes/no or 1/0)
 - `network_id` or `radio_netw_ID` - Radio network ID (0-15)
 - `frequency` - Operating frequency in MHz (420.000-450.000)
+- `freq_shift` - Frequency shift in MHz (-10.0 to +10.0)
 - `modulation` - Modulation scheme (11-14 or 20-24)
-- `is_master` - Master mode (yes/no or 1/0)
-- `callsign` - Station callsign (up to 13 chars)
+- `RF_power` - RF power (0-127, default 127)
+- `radio_on_at_start` - Radio auto-start (yes/no)
+- `master_FDD` - Master FDD mode (no/down/up)
+- `telnet_active` - Telnet service (yes/no)
+- `telnet_routed` - Telnet routing (yes/no)
+- `modem_IP` - Modem IP address (e.g., 192.168.10.1)
+- `netmask` - Network mask (e.g., 255.255.255.0)
+- `IP_begin` - Starting IP for allocation
+- `DHCP_active` - DHCP server (yes/no)
+- `DNS_active` - DNS service (yes/no)
+- `DNS_value` - DNS server IP address
+- `def_route_active` - Default route (yes/no)
+- `def_route_val` - Default gateway IP
+- `master_IP_size` - Master IP pool size
+- `client_req_size` - Client requested IP size
+- `master_down_IP` - FDD master down IP
 
 ### Available `show`/`display` parameters:
 - `config` - Current configuration

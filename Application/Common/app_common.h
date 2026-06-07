@@ -157,6 +157,7 @@ extern volatile uint16_t radio_addr_table_BER[RADIO_ADDR_TABLE_SIZE];
 extern volatile uint8_t is_TDMA_master;
 extern volatile uint8_t is_SRAM_ext;
 extern volatile uint8_t is_telnet_active;
+extern volatile uint8_t is_telnet_routed;       /* Telnet traffic routing flag */
 extern volatile uint8_t my_client_radio_connexion_state;
 extern uint8_t my_radio_client_ID;  /* This client's radio address (0-15) */
 
@@ -207,6 +208,9 @@ extern int CONF_signaling_period;           /* Signaling period in seconds */
 extern uint32_t CONF_radio_timeout_small;   /* Small timeout for radio in microseconds */
 extern uint8_t CONF_radio_network_ID;       /* Radio network ID (0-255) */
 extern uint16_t CONF_frequency_HD;          /* Radio frequency in kHz offset from band start */
+extern int16_t CONF_freq_shift;             /* Frequency shift in kHz */
+extern uint8_t CONF_radio_PA_PWR;           /* RF power (0-127) */
+extern uint32_t CONF_master_down_IP;        /* Master FDD down IP address */
 extern uint8_t CONF_modem_MAC[6];           /* Modem MAC address (default NFPR:xx:xx) */
 
 /* Downlink signal quality */

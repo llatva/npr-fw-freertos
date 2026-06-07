@@ -42,7 +42,7 @@ void CLI_SendWelcome(CLI_Context_t *ctx) {
     const char *welcome = 
         "\r\n"
         "=====================================================\r\n"
-        "  NPR-70 / TACNPR modem, FreeRTOS port v" FW_VERSION "\r\n"
+        "  NPR-70 / TACNPR modem, " FW_VERSION "\r\n"
         "  Type 'help' for commands\r\n"
         "=====================================================\r\n";
     
@@ -75,10 +75,10 @@ int CLI_ProcessCommand(CLI_Context_t *ctx, const char *cmd) {
     sscanf(cmd, "%23s %23s %23s", cmd_str, param1, param2);
     
     /* Command: help */
-    if (strcmp(cmd_str, "help") == 0 || strcmp(cmd_str, "?") == 0) {
+    if (strcmp(cmd_str, "help") == 0 || strcmp(cmd_str, "?") == 0 || strcmp(cmd_str, "apua") == 0) {
         const char *help_msg = 
             "Available commands:\r\n"
-            "  help, ?           - Show this help\r\n"
+            "  help, ?, apua     - Show this help\r\n"
             "  version           - Show firmware version\r\n"
             "  status            - Show modem status\r\n"
             "  who               - Show client table\r\n"
@@ -88,10 +88,20 @@ int CLI_ProcessCommand(CLI_Context_t *ctx, const char *cmd) {
             "  show dhcp         - Display DHCP/ARP entries\r\n"
             "  radio on/off      - Enable/disable radio\r\n"
             "  save              - Save configuration to flash\r\n"
-            "  set <param> <val> - Set parameter\r\n"
+            "  set <param> <val> - Set parameter (see below)\r\n"
             "  reset_to_default  - Factory reset (restore defaults)\r\n"
             "  reboot            - Restart the modem\r\n"
-            "  exit, logout      - Close connection\r\n";
+            "  exit, logout      - Close connection\r\n"
+            "  73                - Ham radio goodbye\r\n\r\n"
+            "Set parameters:\r\n"
+            "  callsign, is_master, network_id, frequency\r\n"
+            "  modulation, freq_shift, RF_power\r\n"
+            "  radio_on_at_start, master_FDD\r\n"
+            "  telnet_active, telnet_routed\r\n"
+            "  modem_IP, netmask, IP_begin\r\n"
+            "  DHCP_active, DNS_active, def_route_active\r\n"
+            "  DNS_value, def_route_val\r\n"
+            "  master_IP_size, client_req_size, master_down_IP\r\n";
         strcpy((char *)tx_data, help_msg);
         len = strlen(help_msg);
     }
@@ -124,20 +134,119 @@ int CLI_ProcessCommand(CLI_Context_t *ctx, const char *cmd) {
     /* Command: show */
     else if (strcmp(cmd_str, "show") == 0 || strcmp(cmd_str, "display") == 0) {
         if (strcmp(param1, "config") == 0) {
-            snprintf((char *)tx_data, ctx->response_size,
-                     "Configuration:\r\n"
-                     "  Network ID: %u\r\n"
-                     "  Frequency: %u.%03u MHz\r\n"
-                     "  Mode: %s\r\n"
-                     "  Modulation: %u\r\n"
-                     "  Radio State: %s\r\n",
+            const char *yes_no[] = {"no", "yes"};
+            const char *fdd_mode[] = {"no", "down", "up"};
+            uint32_t ip;
+            
+            len = snprintf((char *)tx_data, ctx->response_size,
+                     "\r\nCurrent CONFIG:\r\n"
+                     "  callsign: %s\r\n"
+                     "  is_master: %s\r\n"
+                     "  MAC: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
+                     CONF_radio_my_callsign + 2,
+                     yes_no[is_TDMA_master ? 1 : 0],
+                     CONF_modem_MAC[0], CONF_modem_MAC[1], CONF_modem_MAC[2],
+                     CONF_modem_MAC[3], CONF_modem_MAC[4], CONF_modem_MAC[5]);
+            
+            len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                     "  ext_SRAM: %s\r\n"
+                     "  frequency: %u.%03u MHz\r\n"
+                     "  freq_shift: %.3f MHz\r\n"
+                     "  RF_power: %u\r\n"
+                     "  modulation: %u\r\n",
+                     yes_no[is_SRAM_ext ? 1 : 0],
+                     420 + (CONF_frequency_HD / 1000), CONF_frequency_HD % 1000,
+                     (float)CONF_freq_shift / 1000.0,
+                     CONF_radio_PA_PWR,
+                     CONF_radio.modulation);
+            
+            len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                     "  radio_netw_ID: %u\r\n"
+                     "  radio_on_at_start: %s\r\n"
+                     "  telnet_active: %s\r\n"
+                     "  telnet_routed: %s\r\n",
                      CONF_radio_network_ID,
-                     420 + (CONF_frequency_HD / 1000),
-                     CONF_frequency_HD % 1000,
-                     is_TDMA_master ? "Master" : "Client",
-                     CONF_radio.modulation,
-                     CONF_radio.state_ON_OFF ? "ON" : "OFF");
-            len = strlen((char *)tx_data);
+                     yes_no[CONF_radio.default_state_ON_OFF],
+                     yes_no[is_telnet_active ? 1 : 0],
+                     yes_no[is_telnet_routed ? 1 : 0]);
+            
+            ip = LAN_conf_applied.LAN_modem_IP;
+            len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                     "  modem_IP: %u.%u.%u.%u\r\n",
+                     (unsigned int)(ip >> 24) & 0xFF,
+                     (unsigned int)(ip >> 16) & 0xFF,
+                     (unsigned int)(ip >> 8) & 0xFF,
+                     (unsigned int)ip & 0xFF);
+            
+            ip = LAN_conf_applied.LAN_subnet_mask;
+            len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                     "  netmask: %u.%u.%u.%u\r\n",
+                     (unsigned int)(ip >> 24) & 0xFF,
+                     (unsigned int)(ip >> 16) & 0xFF,
+                     (unsigned int)(ip >> 8) & 0xFF,
+                     (unsigned int)ip & 0xFF);
+            
+            if (is_TDMA_master) {
+                len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                         "  master_FDD: %s\r\n",
+                         fdd_mode[CONF_radio.master_FDD]);
+            }
+            
+            if (is_TDMA_master && CONF_radio.master_FDD < 2) {
+                ip = CONF_radio_IP_start;
+                len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                         "  IP_begin: %u.%u.%u.%u\r\n"
+                         "  master_IP_size: %lu\r\n",
+                         (unsigned int)(ip >> 24) & 0xFF,
+                         (unsigned int)(ip >> 16) & 0xFF,
+                         (unsigned int)(ip >> 8) & 0xFF,
+                         (unsigned int)ip & 0xFF,
+                         (unsigned long)CONF_radio_IP_size);
+                
+                ip = LAN_conf_applied.LAN_def_route;
+                len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                         "  def_route_active: %s\r\n"
+                         "  def_route_val: %u.%u.%u.%u\r\n",
+                         yes_no[LAN_conf_applied.LAN_def_route_activ],
+                         (unsigned int)(ip >> 24) & 0xFF,
+                         (unsigned int)(ip >> 16) & 0xFF,
+                         (unsigned int)(ip >> 8) & 0xFF,
+                         (unsigned int)ip & 0xFF);
+                
+                ip = LAN_conf_applied.LAN_DNS_value;
+                len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                         "  DNS_active: %s\r\n"
+                         "  DNS_value: %u.%u.%u.%u\r\n",
+                         yes_no[LAN_conf_applied.LAN_DNS_activ],
+                         (unsigned int)(ip >> 24) & 0xFF,
+                         (unsigned int)(ip >> 16) & 0xFF,
+                         (unsigned int)(ip >> 8) & 0xFF,
+                         (unsigned int)ip & 0xFF);
+            }
+            
+            if (is_TDMA_master && CONF_radio.master_FDD == 2) {
+                ip = CONF_master_down_IP;
+                len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                         "  master_down_IP: %u.%u.%u.%u\r\n",
+                         (unsigned int)(ip >> 24) & 0xFF,
+                         (unsigned int)(ip >> 16) & 0xFF,
+                         (unsigned int)(ip >> 8) & 0xFF,
+                         (unsigned int)ip & 0xFF);
+            }
+            
+            if (!is_TDMA_master) {
+                ip = CONF_radio_IP_start;
+                len += snprintf((char *)tx_data + len, ctx->response_size - len,
+                         "  IP_begin: %u.%u.%u.%u\r\n"
+                         "  client_req_size: %lu\r\n"
+                         "  DHCP_active: %s\r\n",
+                         (unsigned int)(ip >> 24) & 0xFF,
+                         (unsigned int)(ip >> 16) & 0xFF,
+                         (unsigned int)(ip >> 8) & 0xFF,
+                         (unsigned int)ip & 0xFF,
+                         (unsigned long)CONF_radio_IP_size_requested,
+                         yes_no[LAN_conf_applied.DHCP_server_active]);
+            }
         }
         else if (strcmp(param1, "tasks") == 0) {
             TaskStatus_t task_stats[16];
@@ -314,10 +423,262 @@ int CLI_ProcessCommand(CLI_Context_t *ctx, const char *cmd) {
                 len = strlen((char *)tx_data);
             }
         }
+        else if (strcmp(param1, "freq_shift") == 0) {
+            float shift_val = 0;
+            if (sscanf(param2, "%f", &shift_val) == 1 && shift_val >= -10.0 && shift_val <= 10.0) {
+                CONF_freq_shift = (int16_t)(shift_val * 1000);
+                snprintf((char *)tx_data, ctx->response_size,
+                         "Frequency shift set to %.3f MHz\r\n", shift_val);
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "ERROR: freq_shift must be -10.0 to +10.0 MHz\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "RF_power") == 0) {
+            int val = atoi(param2);
+            if (val >= 0 && val <= 127) {
+                CONF_radio_PA_PWR = (uint8_t)val;
+                snprintf((char *)tx_data, ctx->response_size,
+                         "RF power set to %u\r\n", CONF_radio_PA_PWR);
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "ERROR: RF_power must be 0-127\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "radio_on_at_start") == 0) {
+            if (strcmp(param2, "yes") == 0 || strcmp(param2, "1") == 0) {
+                CONF_radio.default_state_ON_OFF = 1;
+                strcpy((char *)tx_data, "Radio will start ON at boot\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else if (strcmp(param2, "no") == 0 || strcmp(param2, "0") == 0) {
+                CONF_radio.default_state_ON_OFF = 0;
+                strcpy((char *)tx_data, "Radio will start OFF at boot\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "Usage: set radio_on_at_start {yes|no}\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "master_FDD") == 0) {
+            if (strcmp(param2, "no") == 0) {
+                CONF_radio.master_FDD = 0;
+                strcpy((char *)tx_data, "Master FDD: no (TDD mode)\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else if (strcmp(param2, "down") == 0) {
+                CONF_radio.master_FDD = 1;
+                strcpy((char *)tx_data, "Master FDD: down\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else if (strcmp(param2, "up") == 0) {
+                CONF_radio.master_FDD = 2;
+                strcpy((char *)tx_data, "Master FDD: up\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "Usage: set master_FDD {no|down|up}\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "telnet_active") == 0) {
+            if (strcmp(param2, "yes") == 0 || strcmp(param2, "1") == 0) {
+                is_telnet_active = 1;
+                strcpy((char *)tx_data, "Telnet active: yes\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else if (strcmp(param2, "no") == 0 || strcmp(param2, "0") == 0) {
+                is_telnet_active = 0;
+                strcpy((char *)tx_data, "Telnet active: no\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "Usage: set telnet_active {yes|no}\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "telnet_routed") == 0) {
+            if (strcmp(param2, "yes") == 0 || strcmp(param2, "1") == 0) {
+                is_telnet_routed = 1;
+                strcpy((char *)tx_data, "Telnet routed: yes\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else if (strcmp(param2, "no") == 0 || strcmp(param2, "0") == 0) {
+                is_telnet_routed = 0;
+                strcpy((char *)tx_data, "Telnet routed: no\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "Usage: set telnet_routed {yes|no}\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "DHCP_active") == 0) {
+            if (strcmp(param2, "yes") == 0 || strcmp(param2, "1") == 0) {
+                LAN_conf_applied.DHCP_server_active = 1;
+                strcpy((char *)tx_data, "DHCP server active: yes\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else if (strcmp(param2, "no") == 0 || strcmp(param2, "0") == 0) {
+                LAN_conf_applied.DHCP_server_active = 0;
+                strcpy((char *)tx_data, "DHCP server active: no\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "Usage: set DHCP_active {yes|no}\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "DNS_active") == 0) {
+            if (strcmp(param2, "yes") == 0 || strcmp(param2, "1") == 0) {
+                LAN_conf_applied.LAN_DNS_activ = 1;
+                strcpy((char *)tx_data, "DNS active: yes\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else if (strcmp(param2, "no") == 0 || strcmp(param2, "0") == 0) {
+                LAN_conf_applied.LAN_DNS_activ = 0;
+                strcpy((char *)tx_data, "DNS active: no\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "Usage: set DNS_active {yes|no}\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "def_route_active") == 0) {
+            if (strcmp(param2, "yes") == 0 || strcmp(param2, "1") == 0) {
+                LAN_conf_applied.LAN_def_route_activ = 1;
+                strcpy((char *)tx_data, "Default route active: yes\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else if (strcmp(param2, "no") == 0 || strcmp(param2, "0") == 0) {
+                LAN_conf_applied.LAN_def_route_activ = 0;
+                strcpy((char *)tx_data, "Default route active: no\r\n");
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "Usage: set def_route_active {yes|no}\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "modem_IP") == 0) {
+            uint32_t a, b, c, d;
+            if (sscanf(param2, "%lu.%lu.%lu.%lu", &a, &b, &c, &d) == 4 &&
+                a <= 255 && b <= 255 && c <= 255 && d <= 255) {
+                LAN_conf_applied.LAN_modem_IP = (a << 24) | (b << 16) | (c << 8) | d;
+                snprintf((char *)tx_data, ctx->response_size,
+                         "Modem IP set to %lu.%lu.%lu.%lu\r\n", a, b, c, d);
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "ERROR: Invalid IP address\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "netmask") == 0) {
+            uint32_t a, b, c, d;
+            if (sscanf(param2, "%lu.%lu.%lu.%lu", &a, &b, &c, &d) == 4 &&
+                a <= 255 && b <= 255 && c <= 255 && d <= 255) {
+                LAN_conf_applied.LAN_subnet_mask = (a << 24) | (b << 16) | (c << 8) | d;
+                snprintf((char *)tx_data, ctx->response_size,
+                         "Netmask set to %lu.%lu.%lu.%lu\r\n", a, b, c, d);
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "ERROR: Invalid netmask\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "def_route_val") == 0) {
+            uint32_t a, b, c, d;
+            if (sscanf(param2, "%lu.%lu.%lu.%lu", &a, &b, &c, &d) == 4 &&
+                a <= 255 && b <= 255 && c <= 255 && d <= 255) {
+                LAN_conf_applied.LAN_def_route = (a << 24) | (b << 16) | (c << 8) | d;
+                snprintf((char *)tx_data, ctx->response_size,
+                         "Default route set to %lu.%lu.%lu.%lu\r\n", a, b, c, d);
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "ERROR: Invalid IP address\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "DNS_value") == 0) {
+            uint32_t a, b, c, d;
+            if (sscanf(param2, "%lu.%lu.%lu.%lu", &a, &b, &c, &d) == 4 &&
+                a <= 255 && b <= 255 && c <= 255 && d <= 255) {
+                LAN_conf_applied.LAN_DNS_value = (a << 24) | (b << 16) | (c << 8) | d;
+                snprintf((char *)tx_data, ctx->response_size,
+                         "DNS value set to %lu.%lu.%lu.%lu\r\n", a, b, c, d);
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "ERROR: Invalid IP address\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "IP_begin") == 0) {
+            uint32_t a, b, c, d;
+            if (sscanf(param2, "%lu.%lu.%lu.%lu", &a, &b, &c, &d) == 4 &&
+                a <= 255 && b <= 255 && c <= 255 && d <= 255) {
+                CONF_radio_IP_start = (a << 24) | (b << 16) | (c << 8) | d;
+                snprintf((char *)tx_data, ctx->response_size,
+                         "IP start set to %lu.%lu.%lu.%lu\r\n", a, b, c, d);
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "ERROR: Invalid IP address\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "master_down_IP") == 0) {
+            uint32_t a, b, c, d;
+            if (sscanf(param2, "%lu.%lu.%lu.%lu", &a, &b, &c, &d) == 4 &&
+                a <= 255 && b <= 255 && c <= 255 && d <= 255) {
+                CONF_master_down_IP = (a << 24) | (b << 16) | (c << 8) | d;
+                snprintf((char *)tx_data, ctx->response_size,
+                         "Master down IP set to %lu.%lu.%lu.%lu\r\n", a, b, c, d);
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "ERROR: Invalid IP address\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "master_IP_size") == 0) {
+            uint32_t val = atoi(param2);
+            if (val > 0 && val <= 0xFFFF) {
+                CONF_radio_IP_size = val;
+                snprintf((char *)tx_data, ctx->response_size,
+                         "Master IP size set to %lu\r\n", val);
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "ERROR: Invalid IP size\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
+        else if (strcmp(param1, "client_req_size") == 0) {
+            uint32_t val = atoi(param2);
+            if (val > 0 && val <= 0xFFFF) {
+                CONF_radio_IP_size_requested = val;
+                snprintf((char *)tx_data, ctx->response_size,
+                         "Client requested size set to %lu\r\n", val);
+                len = strlen((char *)tx_data);
+            }
+            else {
+                strcpy((char *)tx_data, "ERROR: Invalid IP size\r\n");
+                len = strlen((char *)tx_data);
+            }
+        }
         else {
             snprintf((char *)tx_data, ctx->response_size,
-                     "Unknown parameter: %s\r\n"
-                     "Available: network_id, frequency, modulation, is_master, callsign\r\n",
+                     "Unknown parameter: %s\r\nType 'help' for available commands\r\n",
                      param1);
             len = strlen((char *)tx_data);
         }

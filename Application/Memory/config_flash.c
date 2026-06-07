@@ -112,6 +112,10 @@ static void Config_ApplyToGlobals(const FlashConfig_t *config)
     CONF_radio_timeout_small = config->radio_timeout_small;
     CONF_radio_network_ID = config->radio_network_ID;
     CONF_frequency_HD = config->frequency_HD;
+    CONF_freq_shift = config->freq_shift;
+    CONF_radio_PA_PWR = config->radio_PA_PWR;
+    CONF_master_down_IP = config->master_down_IP;
+    is_telnet_routed = config->telnet_routed;
 }
 
 /**
@@ -165,6 +169,10 @@ static void Config_CopyFromGlobals(FlashConfig_t *config)
     config->radio_timeout_small = CONF_radio_timeout_small;
     config->radio_network_ID = CONF_radio_network_ID;
     config->frequency_HD = CONF_frequency_HD;
+    config->freq_shift = CONF_freq_shift;
+    config->radio_PA_PWR = CONF_radio_PA_PWR;
+    config->master_down_IP = CONF_master_down_IP;
+    config->telnet_routed = is_telnet_routed;
     
     /* Calculate CRC */
     config->crc32 = Config_Calculate_CRC32(config);
