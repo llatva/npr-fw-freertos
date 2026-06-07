@@ -121,7 +121,28 @@ $(BUILD_DIR)/%.o: %.s Makefile | $(BUILD_DIR)
 
 $(BUILD_DIR)/$(TARGET).elf: $(OBJECTS) Makefile
 	$(CC) $(OBJECTS) $(LDFLAGS) -o $@
-	$(SZ) $@
+	@echo ""
+	@echo "=== Firmware Build Complete ==="
+	@$(SZ) $@
+	@echo ""
+	@echo "=== Memory Usage ==="
+	@size_output=$$($(SZ) $@ | tail -1); \
+	text=$$(echo $$size_output | awk '{print $$1}'); \
+	data=$$(echo $$size_output | awk '{print $$2}'); \
+	bss=$$(echo $$size_output | awk '{print $$3}'); \
+	flash_used=$$((text + data)); \
+	flash_total=262144; \
+	ram_used=$$((data + bss)); \
+	ram_total=65536; \
+	flash_pct=$$((flash_used * 100 / flash_total)); \
+	ram_pct=$$((ram_used * 100 / ram_total)); \
+	flash_free=$$((flash_total - flash_used)); \
+	ram_free=$$((ram_total - ram_used)); \
+	flash_free_pct=$$((100 - flash_pct)); \
+	ram_free_pct=$$((100 - ram_pct)); \
+	echo "Flash: $$flash_used / $$flash_total bytes ($$flash_pct% used, $$flash_free_pct% FREE) - $$flash_free bytes available"; \
+	echo "RAM:   $$ram_used / $$ram_total bytes ($$ram_pct% used, $$ram_free_pct% FREE) - $$ram_free bytes available"; \
+	echo ""
 
 $(BUILD_DIR)/%.hex: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
 	$(HEX) $< $@
